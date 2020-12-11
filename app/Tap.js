@@ -68,8 +68,8 @@ const Tap = class Tap {
     async streamMessages({ stream } ) {
         return new Highland(
             await this.newAgentzRequest({ apiKey: this._config.apiKey })
-        ).map(message =>
-            `${this.formatRecord({ stream, record: message[stream],
+        ).map(record =>
+            `${this.formatRecord({ stream, record,
                 })
             }\n`
         )
