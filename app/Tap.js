@@ -14,7 +14,7 @@ const Tap = class Tap {
     constructor(args) {
 
         if (!args.config) {
-            throw 'Usage: tap-agentz --config <config-file> --state <state-file>';
+            throw 'Usage: tap-agentz --config <config-file>';
         }
 
         this._config = JSON.parse(fs.readFileSync(args.config, 'utf8'));
