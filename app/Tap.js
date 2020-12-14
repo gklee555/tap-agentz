@@ -7,11 +7,14 @@ const fs = require('fs');
 const Request = require('request');
 const Util = require('util');
 
+const START_DATE = '2020-08-01'; // Earliest relevant agentz data
+
 const Tap = class Tap {
 
     constructor(args) {
+
         if (!args.config) {
-            throw 'Usage: tap-agentz --config <config-file>';
+            throw 'Usage: tap-agentz --config <config-file> --state <state-file>';
         }
 
         this._config = JSON.parse(fs.readFileSync(args.config, 'utf8'));
@@ -21,9 +24,42 @@ const Tap = class Tap {
         }
 
         this._request = Util.promisify(Request);
+
+        this._endDate = new Date().toISOString().split('T')[0]; // Today in ISO 8601
+        ;
     }
 
-    async newAgentzRequest({ apiKey }) {
+    toSnakeCase(attr) {
+        if (attr === 'TotalNumberofSessions') {
+            return 'total_number_of_sessions';
+        }
+
+        return attr.replace(/\W+/g, " ")
+        .split(/ |\B(?=[A-Z])/)
+        .map(word => word.toLowerCase())
+        .join('_');
+    }
+
+    formatRecord({ record }) {
+        let formattedRecord = {};
+        for (const [key, val] of Object.entries(record)) {
+            formattedRecord[this.toSnakeCase(key)] = val;
+        }
+
+        formattedRecord['date_updated'] = this._endDate;
+
+        return formattedRecord;
+    };
+
+    formatMessage({ stream, record }) {
+        return JSON.stringify({
+            type: 'RECORD',
+            stream,
+            record: this.formatRecord({ record }),
+        })
+    }
+
+    async agentzRequest({ apiKey }) {
         const {
             statusCode,
             body: response,
@@ -31,8 +67,8 @@ const Tap = class Tap {
             method: 'POST',
             url: 'https://dev-api.agentz.ai/iam/v1/deploymentreport',
             body: {
-                startDate: '2020-01-01',
-                endDate: '2020-12-11',
+                startDate: START_DATE,
+                endDate: this._endDate,
             },
             headers: {
                 apiKey,
@@ -50,12 +86,17 @@ const Tap = class Tap {
             throw new Error(response && response.message);
         }
 
-
         return response;
     }
 
+    async streamMessages({ stream } ) {
+        return new Highland(
+            await this.agentzRequest({ apiKey: this._config.apiKey })
+        ).map(record => `${this.formatMessage({ stream, record })}\n`)
+    }
+
     async start(outputStream) {
-        const messages = await this.streamMessages({ stream: 'TotalNumberofSessions'});
+        const messages = await this.streamMessages({ stream: 'AgentzSessions'});
 
         return new Promise((resolve, reject) => {
             messages
@@ -63,24 +104,6 @@ const Tap = class Tap {
                 .pipe(outputStream)
                 .on('done', resolve);
         });
-    }
-
-    async streamMessages({ stream } ) {
-        return new Highland(
-            await this.newAgentzRequest({ apiKey: this._config.apiKey })
-        ).map(record =>
-            `${this.formatRecord({ stream, record,
-                })
-            }\n`
-        )
-    }
-
-    formatRecord({ stream, record }) {
-        return JSON.stringify({
-            type: 'RECORD',
-            stream,
-            record,
-        })
     }
 }
 
